@@ -101,7 +101,7 @@ int ngx_http_ssl_certificate(ngx_ssl_conn_t *ssl_conn, void *arg);
 ngx_int_t ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b);
 ngx_int_t ngx_http_parse_uri(ngx_http_request_t *r);
 ngx_int_t ngx_http_parse_complex_uri(ngx_http_request_t *r,
-    ngx_uint_t merge_slashes);
+    ngx_uint_t merge_slashes, ngx_uint_t decode_percent_characters);
 ngx_int_t ngx_http_parse_status_line(ngx_http_request_t *r, ngx_buf_t *b,
     ngx_http_status_t *status);
 ngx_int_t ngx_http_parse_unsafe_uri(ngx_http_request_t *r, ngx_str_t *uri,

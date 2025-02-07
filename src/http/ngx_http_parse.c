@@ -1242,7 +1242,7 @@ ngx_http_parse_uri(ngx_http_request_t *r)
 
 
 ngx_int_t
-ngx_http_parse_complex_uri(ngx_http_request_t *r, ngx_uint_t merge_slashes)
+ngx_http_parse_complex_uri(ngx_http_request_t *r, ngx_uint_t merge_slashes, ngx_uint_t decode_percent_characters)
 {
     u_char  c, ch, decoded, *p, *u;
     enum {
@@ -1330,6 +1330,10 @@ ngx_http_parse_complex_uri(ngx_http_request_t *r, ngx_uint_t merge_slashes)
                 *u++ = ch;
                 break;
             case '%':
+                if (!decode_percent_characters) {
+                  *u++ = '%';
+                  break;
+                }
                 quoted_state = state;
                 state = sw_quoted;
                 break;
@@ -2413,3 +2417,4 @@ invalid:
 
     return NGX_ERROR;
 }
+
