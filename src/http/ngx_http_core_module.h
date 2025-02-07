@@ -201,6 +201,7 @@ typedef struct {
     ngx_flag_t                  ignore_invalid_headers;
     ngx_flag_t                  merge_slashes;
     ngx_flag_t                  underscores_in_headers;
+    ngx_flag_t                  decode_slashes;
 
     unsigned                    listen:1;
 #if (NGX_PCRE)

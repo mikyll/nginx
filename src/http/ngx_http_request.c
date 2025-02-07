@@ -1291,7 +1291,7 @@ ngx_http_process_request_uri(ngx_http_request_t *r)
 
         cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
 
-        if (ngx_http_parse_complex_uri(r, cscf->merge_slashes) != NGX_OK) {
+        if (ngx_http_parse_complex_uri(r, cscf->merge_slashes, cscf->decode_slashes) != NGX_OK) {
             r->uri.len = 0;
 
             ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
