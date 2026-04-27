@@ -514,6 +514,7 @@ static ngx_keyval_t  ngx_http_grpc_headers[] = {
     { ngx_string("TE"), ngx_string("$grpc_internal_trailers") },
     { ngx_string("Host"), ngx_string("") },
     { ngx_string("Connection"), ngx_string("") },
+    { ngx_string("Proxy-Connection"), ngx_string("") },
     { ngx_string("Transfer-Encoding"), ngx_string("") },
     { ngx_string("Keep-Alive"), ngx_string("") },
     { ngx_string("Expect"), ngx_string("") },
@@ -1224,6 +1225,9 @@ ngx_http_grpc_reinit_request(ngx_http_request_t *r)
     ctx->rst = 0;
     ctx->goaway = 0;
     ctx->connection = NULL;
+    ctx->in = NULL;
+    ctx->busy = NULL;
+    ctx->out = NULL;
 
     return NGX_OK;
 }
@@ -1869,7 +1873,8 @@ ngx_http_grpc_process_header(ngx_http_request_t *r)
                         return NGX_HTTP_UPSTREAM_INVALID_HEADER;
                     }
 
-                    if (status < NGX_HTTP_OK) {
+                    if (status < NGX_HTTP_OK && status != NGX_HTTP_EARLY_HINTS)
+                    {
                         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                                       "upstream sent unexpected :status \"%V\"",
                                       status_line);
@@ -1902,6 +1907,10 @@ ngx_http_grpc_process_header(ngx_http_request_t *r)
                 h->lowcase_key = h->key.data;
                 h->hash = ngx_hash_key(h->key.data, h->key.len);
 
+                if (u->headers_in.status_n == NGX_HTTP_EARLY_HINTS) {
+                    continue;
+                }
+
                 hh = ngx_hash_find(&umcf->headers_in_hash, h->hash,
                                    h->lowcase_key, h->key.len);
 
@@ -1922,6 +1931,17 @@ ngx_http_grpc_process_header(ngx_http_request_t *r)
 
                 ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                                "grpc header done");
+
+                if (u->headers_in.status_n == NGX_HTTP_EARLY_HINTS) {
+                    if (ctx->end_stream) {
+                        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                                      "upstream prematurely closed stream");
+                        return NGX_HTTP_UPSTREAM_INVALID_HEADER;
+                    }
+
+                    ctx->status = 0;
+                    return NGX_HTTP_UPSTREAM_EARLY_HINTS;
+                }
 
                 if (ctx->end_stream) {
                     u->headers_in.content_length_n = 0;
@@ -4413,6 +4433,7 @@ ngx_http_grpc_create_loc_conf(ngx_conf_t *cf)
     conf->upstream.pass_request_body = 1;
     conf->upstream.force_ranges = 0;
     conf->upstream.pass_trailers = 1;
+    conf->upstream.pass_early_hints = 1;
     conf->upstream.preserve_output = 1;
 
     conf->headers_source = NGX_CONF_UNSET_PTR;
@@ -4509,8 +4530,13 @@ ngx_http_grpc_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
                               prev->upstream.ssl_certificate_key, NULL);
     ngx_conf_merge_ptr_value(conf->upstream.ssl_certificate_cache,
                               prev->upstream.ssl_certificate_cache, NULL);
-    ngx_conf_merge_ptr_value(conf->upstream.ssl_passwords,
-                              prev->upstream.ssl_passwords, NULL);
+
+    if (ngx_http_upstream_merge_ssl_passwords(cf, &conf->upstream,
+                                              &prev->upstream)
+        != NGX_OK)
+    {
+        return NGX_CONF_ERROR;
+    }
 
     ngx_conf_merge_ptr_value(conf->ssl_conf_commands,
                               prev->ssl_conf_commands, NULL);
@@ -5077,16 +5103,9 @@ ngx_http_grpc_set_ssl(ngx_conf_t *cf, ngx_http_grpc_loc_conf_t *glcf)
             return NGX_ERROR;
         }
 
-        if (glcf->upstream.ssl_certificate->lengths
-            || glcf->upstream.ssl_certificate_key->lengths)
+        if (glcf->upstream.ssl_certificate->lengths == NULL
+            && glcf->upstream.ssl_certificate_key->lengths == NULL)
         {
-            glcf->upstream.ssl_passwords =
-                  ngx_ssl_preserve_passwords(cf, glcf->upstream.ssl_passwords);
-            if (glcf->upstream.ssl_passwords == NULL) {
-                return NGX_ERROR;
-            }
-
-        } else {
             if (ngx_ssl_certificate(cf, glcf->upstream.ssl,
                                     &glcf->upstream.ssl_certificate->value,
                                     &glcf->upstream.ssl_certificate_key->value,
